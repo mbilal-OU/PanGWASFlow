@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install package
+        run: pip install -e '.[test]'
+      - name: Compile sources
+        run: python -m compileall -q src
+      - name: Run tests
+        run: pytest
+      - name: Run teaching benchmark
+        run: pangwasflow demo --outdir /tmp/pangwasflow-demo --seed 42 --samples 120 --features 40
+
+  snakemake-dag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Snakemake
+        run: pip install 'snakemake>=9,<10'
+      - name: Validate DAG
+        run: snakemake --dry-run --cores 1

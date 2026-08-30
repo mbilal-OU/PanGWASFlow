@@ -5,49 +5,54 @@
 
 **Population-structure-aware microbial GWAS across SNPs, accessory genes, k-mers, and unitigs.**
 
-PanGWASFlow is a reproducible Snakemake project for microbial genome-wide association studies. Its central methodological goal is to make one problem impossible to ignore: in clonally structured populations, a strong association can reflect lineage structure rather than a causal genotype-phenotype relationship.
+PanGWASFlow is being built as a reproducible Snakemake project for microbial genome-wide association studies. Its central methodological goal is to separate genotype-phenotype evidence from population-structure effects and to keep the statistical assumptions visible.
 
-The first validated milestone uses a synthetic demonstration dataset so that the expected causal and confounded signals are known in advance. Larger biological case studies will be added only after the statistical workflow is validated.
+The first milestone uses a deterministic synthetic teaching benchmark. It validates packaging, configuration, workflow execution, multiple-testing utilities, CI, and result-table conventions before larger analytical modules or biological case studies are added.
 
-## Core question
+## Scientific target
 
-> Which genomic features are associated with a phenotype after accounting for population structure and multiple testing?
+> Which genomic features remain associated with a phenotype after accounting for population structure and multiple testing?
 
-## Workflow
+## Planned analysis architecture
 
 ```mermaid
 flowchart LR
-    A[Genotypes or genomic features] --> B[Sample and feature QC]
+    A[Genomic feature matrix] --> B[Sample and feature QC]
     C[Phenotype and metadata] --> B
     B --> D[Population structure]
-    D --> E[PCA or kinship covariates]
-    B --> F[Naive association]
+    D --> E[Structure covariates]
+    B --> F[Baseline association]
     B --> G[Structure-aware association]
     E --> G
     F --> H[Multiple-testing correction]
     G --> H
-    H --> I[Manhattan plot]
-    H --> J[QQ plot]
-    H --> K[Top-hit table]
-    K --> L[Biological interpretation]
+    H --> I[Manhattan and QQ plots]
+    H --> J[Top-hit table]
+    J --> K[Biological interpretation]
 ```
 
-## What the first release demonstrates
+## Current v0.1 foundation
 
-- deterministic synthetic genotype and phenotype generation
-- a deliberately confounded lineage effect
-- genotype QC and phenotype checks
-- PCA-based population-structure covariates
-- naive per-feature logistic association
-- population-structure-adjusted logistic association
-- odds ratios, standard errors, P values, and Benjamini-Hochberg FDR
-- genomic inflation diagnostics
-- Manhattan-style and QQ plots
-- machine-readable result tables
+Implemented now:
+
+- installable `pangwasflow` Python package
+- deterministic binary-feature teaching benchmark
+- baseline 2x2 association scan
+- Benjamini-Hochberg FDR utility
+- machine-readable TSV and JSON outputs
 - Snakemake orchestration
-- unit tests and GitHub Actions CI
+- configuration and schema scaffold
+- unit tests
+- GitHub Actions CI
+- citation metadata and scientific guardrails
 
-The synthetic demo is designed so that one true causal feature and one lineage-correlated non-causal feature can be tracked separately. The expected behavior is that structure adjustment reduces the apparent evidence for the confounded feature while preserving evidence for the true causal feature.
+Next analytical milestone:
+
+- population-structure estimation
+- baseline versus structure-adjusted model comparison
+- genomic-inflation diagnostics
+- Manhattan and QQ plots generated from validated outputs
+- modular SNP, accessory-gene, k-mer, and unitig interfaces
 
 ## Quick start
 
@@ -62,45 +67,40 @@ pip install -e '.[test]'
 snakemake --cores 1
 ```
 
-The default workflow writes the synthetic demonstration to `results/demo/`.
-
-You can also run the demonstration directly:
+Or run the current benchmark directly:
 
 ```bash
 pangwasflow demo --outdir results/demo --seed 42 --samples 240 --features 120
 ```
 
-## Expected outputs
+## Current benchmark outputs
 
 ```text
 results/demo/
+├── features.tsv
 ├── metadata.tsv
-├── genotypes.tsv
-├── pcs.tsv
 ├── association_naive.tsv
-├── association_adjusted.tsv
-├── top_hits.tsv
-├── summary.json
-├── manhattan_naive.svg
-├── manhattan_adjusted.svg
-├── qq_naive.svg
-└── qq_adjusted.svg
+└── summary.json
 ```
 
-## Planned biological layers
+The benchmark is synthetic and is intended only to validate software behavior and statistical plumbing. It is not presented as a biological result.
 
-The architecture is intentionally representation-agnostic. Later modules will accept:
+## Why structure correction is central
+
+Microbial datasets frequently contain strong clonal or lineage structure. If both a feature and phenotype are lineage-correlated, a naive association can look convincing even when the feature is not the direct driver. PanGWASFlow will therefore preserve baseline and structure-adjusted results side by side rather than hiding the comparison.
+
+## Planned genomic representations
 
 1. core-genome SNPs
 2. accessory-gene presence/absence
 3. k-mers
 4. unitigs
 
-Those layers will be compared rather than collapsed into a single result table. A hit that appears across multiple genomic representations is biologically different from a lineage-specific signal seen in only one representation.
+These representations will remain separate through association testing and will be compared only at the interpretation layer.
 
 ## Scientific guardrails
 
-PanGWASFlow treats association as statistical evidence, not proof of causation. Population structure, phenotype quality, linkage, lineage effects, multiple testing, feature frequency, and model assumptions are reported explicitly. See [`docs/scientific_guardrails.md`](docs/scientific_guardrails.md).
+Association is statistical evidence, not proof of causation. Population structure, phenotype quality, multiple testing, feature frequency, linkage, and model assumptions must be reported explicitly. See [`docs/scientific_guardrails.md`](docs/scientific_guardrails.md).
 
 ## Repository layout
 
@@ -117,9 +117,9 @@ PanGWASFlow/
 └── pyproject.toml
 ```
 
-## Development status
+## Status
 
-`v0.1` foundation in active development. The current branch focuses on a statistically testable synthetic benchmark before public biological case studies are introduced.
+`v0.1` foundation is under active validation. README result figures will only be added after they can be generated reproducibly from validated output tables.
 
 ## Citation
 
