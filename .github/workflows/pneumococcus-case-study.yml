@@ -98,14 +98,52 @@ jobs:
         run: |
           echo 'd7d5db5f931d7d8233199d416355f2d1  '${ARCHIVE} | md5sum --check --status
           test "$(stat -c%s "$ARCHIVE")" -eq 395485754
-      - name: Extract only phenotype, accessory genes, and Mash distances
+      - name: Extract phenotype, accessory genes, and published Mash sketch
         env:
           ARCHIVE: ${{ runner.temp }}/pyseer_tutorial.tar.bz2
         run: |
           mkdir -p /tmp/pangwasflow-pneumo
           tar -xjf "$ARCHIVE" -C /tmp/pangwasflow-pneumo \
             --wildcards --no-anchored \
-            'resistances.pheno' 'gene_presence_absence.Rtab' 'mash.tsv'
+            'resistances.pheno' 'gene_presence_absence.Rtab' 'mash_sketch.msh'
+      - name: Reconstruct Mash distance matrix
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq mash
+          mash dist /tmp/pangwasflow-pneumo/mash_sketch.msh /tmp/pangwasflow-pneumo/mash_sketch.msh > /tmp/pangwasflow-pneumo/mash.long.tsv
+          python - <<'PY'
+          from pathlib import Path
+          import pandas as pd
+
+          def sample_name(value: str) -> str:
+              name = Path(value).name
+              for suffix in ('.fasta', '.fa', '.fna'):
+                  if name.endswith(suffix):
+                      return name[:-len(suffix)]
+              return Path(name).stem
+
+          long_path = Path('/tmp/pangwasflow-pneumo/mash.long.tsv')
+          rows = []
+          samples = set()
+          with long_path.open() as handle:
+              for line in handle:
+                  fields = line.rstrip('\n').split('\t')
+                  if len(fields) < 3:
+                      raise ValueError(f'Unexpected mash dist row: {line!r}')
+                  left = sample_name(fields[0])
+                  right = sample_name(fields[1])
+                  distance = float(fields[2])
+                  rows.append((left, right, distance))
+                  samples.update((left, right))
+          ordered = sorted(samples)
+          matrix = pd.DataFrame(0.0, index=ordered, columns=ordered)
+          for left, right, distance in rows:
+              matrix.loc[left, right] = distance
+          if matrix.shape != (616, 616):
+              raise ValueError(f'Expected 616 Mash samples, observed {matrix.shape}')
+          matrix.to_csv('/tmp/pangwasflow-pneumo/mash.tsv', sep='\t')
+          print('Mash distance matrix:', matrix.shape)
+          PY
       - name: Verify case-study input dimensions
         run: |
           python - <<'PY'
@@ -116,7 +154,7 @@ jobs:
           root = Path('/tmp/pangwasflow-pneumo')
           phenotype = next(root.rglob('resistances.pheno'))
           rtab = next(root.rglob('gene_presence_absence.Rtab'))
-          mash = next(root.rglob('mash.tsv'))
+          mash = root / 'mash.tsv'
           with phenotype.open() as handle:
               phenotype_rows = list(csv.reader(handle, delimiter='\t'))
           with rtab.open() as handle:
@@ -130,6 +168,7 @@ jobs:
           assert len(header) - 1 == 616, len(header) - 1
           assert feature_count == 10944, feature_count
           assert distance.shape == (616, 616), distance.shape
+          assert set(phenotype_rows[i][0] for i in range(1, len(phenotype_rows))).issubset(set(distance.index.astype(str)))
           PY
       - name: Install PanGWASFlow
         run: pip install -e .
