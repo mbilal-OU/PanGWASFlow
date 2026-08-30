@@ -93,7 +93,7 @@ def read_metadata(
 
 
 def read_binary_feature_matrix(path: str | Path, sample_id_column: str = "sample_id") -> pd.DataFrame:
-    """Read a sample-by-feature matrix encoded strictly as 0/1."""
+    """Read a sample-by-feature matrix encoded strictly as complete 0/1 data."""
     table = _read_table(path).copy()
     table[sample_id_column] = _validate_sample_ids(table, sample_id_column, "feature matrix")
     feature_columns = [column for column in table.columns if column != sample_id_column]
@@ -101,7 +101,7 @@ def read_binary_feature_matrix(path: str | Path, sample_id_column: str = "sample
         raise ValueError("feature matrix contains no feature columns")
     numeric = table[feature_columns].apply(pd.to_numeric, errors="coerce")
     if numeric.isna().any().any():
-        raise ValueError("feature matrix contains missing or non-numeric values; current adapter requires complete 0/1 data")
+        raise ValueError("feature matrix contains missing or non-numeric values; current matrix adapter requires complete 0/1 data")
     invalid = ~numeric.isin([0, 1])
     if invalid.any().any():
         bad_column = invalid.any(axis=0).idxmax()
@@ -129,10 +129,17 @@ def read_gene_presence_absence(path: str | Path) -> pd.DataFrame:
 
 
 def read_rtab_presence_absence(path: str | Path) -> pd.DataFrame:
-    """Read pyseer/SEER-style Rtab gene presence/absence data and transpose to sample-by-feature form."""
-    table = pd.read_csv(path, sep="\t", compression="infer")
+    """Read SEER/pyseer-style Rtab data, preserving '.' and blank cells as missing."""
+    table = pd.read_csv(
+        path,
+        sep="\t",
+        compression="infer",
+        dtype=str,
+        keep_default_na=False,
+    )
     if table.empty or table.shape[1] < 2:
         raise ValueError("Rtab input must contain a feature column and at least one sample column")
+
     feature_column = str(table.columns[0])
     feature_names = _unique_feature_names(table[feature_column], prefix="feature")
     sample_columns = [str(column).strip() for column in table.columns[1:]]
@@ -141,14 +148,19 @@ def read_rtab_presence_absence(path: str | Path) -> pd.DataFrame:
     if len(sample_columns) != len(set(sample_columns)):
         raise ValueError("Rtab input contains duplicate sample column names")
 
-    numeric = table.iloc[:, 1:].apply(pd.to_numeric, errors="coerce")
-    if numeric.isna().any().any():
-        raise ValueError("Rtab input contains missing or non-numeric values; expected complete 0/1 presence/absence data")
-    invalid = ~numeric.isin([0, 1])
-    if invalid.any().any():
-        raise ValueError("Rtab input contains values outside 0/1")
+    raw = table.iloc[:, 1:].apply(lambda column: column.astype(str).str.strip())
+    allowed = raw.isin(["0", "1", ".", ""])
+    if not allowed.all().all():
+        bad_columns = allowed.all(axis=0)
+        bad_column = str(bad_columns[~bad_columns].index[0])
+        bad_values = sorted(set(raw.loc[~allowed[bad_column], bad_column].astype(str)))
+        preview = ", ".join(repr(value) for value in bad_values[:5])
+        raise ValueError(
+            f"Rtab sample column '{bad_column}' contains values outside 0/1/./blank: {preview}"
+        )
 
-    result = pd.DataFrame(numeric.to_numpy(dtype=np.int8).T, columns=feature_names)
+    numeric = raw.replace({"0": 0.0, "1": 1.0, ".": np.nan, "": np.nan}).astype(float)
+    result = pd.DataFrame(numeric.to_numpy(dtype=float).T, columns=feature_names)
     result.insert(0, "sample_id", sample_columns)
     return result
 
@@ -179,24 +191,41 @@ def filter_features_by_prevalence(
     min_prevalence: float = 0.01,
     max_prevalence: float = 0.99,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Filter binary features by observed prevalence and return an auditable QC table."""
+    """Filter incomplete and prevalence-extreme features, returning an auditable QC table.
+
+    The current association/PCA layer requires complete binary features. Missing Rtab
+    observations are therefore preserved during parsing and explicitly removed here at
+    the feature level rather than being interpreted as absence or silently imputed.
+    """
     if not 0 <= min_prevalence < max_prevalence <= 1:
         raise ValueError("prevalence thresholds must satisfy 0 <= min < max <= 1")
     columns = [column for column in features.columns if column != "sample_id"]
-    prevalence = features[columns].mean(axis=0)
-    keep = (prevalence >= min_prevalence) & (prevalence <= max_prevalence)
+    values = features[columns].apply(pd.to_numeric, errors="coerce")
+    prevalence = values.mean(axis=0, skipna=True)
+    missingness = values.isna().mean(axis=0)
+    complete = missingness.eq(0.0)
+    within_prevalence = (prevalence >= min_prevalence) & (prevalence <= max_prevalence)
+    keep = complete & within_prevalence
+    reason = np.select(
+        [~complete.to_numpy(), ~within_prevalence.to_numpy()],
+        ["missingness_filter", "prevalence_filter"],
+        default="retained",
+    )
     qc = pd.DataFrame(
         {
             "feature": columns,
             "prevalence": prevalence.to_numpy(dtype=float),
+            "missingness": missingness.to_numpy(dtype=float),
             "retained": keep.to_numpy(dtype=bool),
-            "reason": np.where(keep, "retained", "prevalence_filter"),
+            "reason": reason,
         }
     )
     retained_columns = [column for column in columns if bool(keep[column])]
     if not retained_columns:
-        raise ValueError("no features remain after prevalence filtering")
-    result = features[["sample_id", *retained_columns]].copy()
+        raise ValueError("no complete variable features remain after missingness and prevalence filtering")
+    retained_values = values[retained_columns].astype(np.int8)
+    result = retained_values.copy()
+    result.insert(0, "sample_id", features["sample_id"].astype(str).to_numpy())
     return result, qc
 
 
