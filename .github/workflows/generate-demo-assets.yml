@@ -36,7 +36,7 @@ jobs:
           cp /tmp/pangwasflow-demo/pca_scores.tsv examples/synthetic/results_preview/
       - name: Commit regenerated assets
         run: |
-          if git diff --quiet -- docs/assets examples/synthetic/results_preview; then
+          if [ -z "$(git status --porcelain -- docs/assets examples/synthetic/results_preview)" ]; then
             echo 'No generated changes.'
             exit 0
           fi
