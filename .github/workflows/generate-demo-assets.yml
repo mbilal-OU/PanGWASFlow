@@ -1,0 +1,47 @@
+name: Generate demo assets
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/pangwasflow/**'
+      - 'config/config.yaml'
+      - 'pyproject.toml'
+      - '.github/workflows/generate-demo-assets.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install package
+        run: pip install -e .
+      - name: Generate validated synthetic benchmark
+        run: pangwasflow demo --outdir /tmp/pangwasflow-demo --seed 42 --samples 400 --features 120 --pcs 2
+      - name: Publish README assets and compact preview
+        run: |
+          mkdir -p docs/assets examples/synthetic/results_preview
+          cp /tmp/pangwasflow-demo/figures/*.svg docs/assets/
+          cp /tmp/pangwasflow-demo/summary.json examples/synthetic/results_preview/
+          cp /tmp/pangwasflow-demo/feature_truth.tsv examples/synthetic/results_preview/
+          cp /tmp/pangwasflow-demo/association_naive.tsv examples/synthetic/results_preview/
+          cp /tmp/pangwasflow-demo/association_adjusted.tsv examples/synthetic/results_preview/
+          cp /tmp/pangwasflow-demo/pca_scores.tsv examples/synthetic/results_preview/
+      - name: Commit regenerated assets
+        run: |
+          if git diff --quiet -- docs/assets examples/synthetic/results_preview; then
+            echo 'No generated changes.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/assets examples/synthetic/results_preview
+          git commit -m 'Regenerate structure-aware GWAS demo assets'
+          git push

@@ -1,6 +1,6 @@
 demo:
   seed: 42
-  samples: 240
+  samples: 400
   features: 120
   pcs: 2
   alpha: 0.05

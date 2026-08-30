@@ -8,15 +8,16 @@ from .benchmark import run_demo
 def main() -> None:
     parser = argparse.ArgumentParser(prog="pangwasflow")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    demo = subparsers.add_parser("demo", help="run the deterministic teaching benchmark")
+    demo = subparsers.add_parser("demo", help="run the deterministic population-structure benchmark")
     demo.add_argument("--outdir", default="results/demo")
     demo.add_argument("--seed", type=int, default=42)
-    demo.add_argument("--samples", type=int, default=240)
+    demo.add_argument("--samples", type=int, default=400)
     demo.add_argument("--features", type=int, default=120)
+    demo.add_argument("--pcs", type=int, default=2)
     args = parser.parse_args()
 
     if args.command == "demo":
-        run_demo(args.outdir, seed=args.seed, samples=args.samples, features=args.features)
+        run_demo(args.outdir, seed=args.seed, samples=args.samples, features=args.features, pcs=args.pcs)
 
 
 if __name__ == "__main__":
