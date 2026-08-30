@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use PanGWASFlow, please cite this software."
+title: "PanGWASFlow"
+type: software
+version: 0.1.0-dev
+date-released: 2026-08-30
+authors:
+  - family-names: Bilal
+    given-names: Muhammad
+repository-code: "https://github.com/mbilal-OU/PanGWASFlow"
+license: MIT
+keywords:
+  - microbial GWAS
+  - bacterial genomics
+  - population structure
+  - pangenome
+  - statistical genetics

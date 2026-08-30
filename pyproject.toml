@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pangwasflow"
+version = "0.1.0.dev0"
+description = "Population-structure-aware microbial GWAS workflow"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+license = {text = "MIT"}
+authors = [{name = "Muhammad Bilal"}]
+dependencies = [
+  "numpy>=1.26,<3",
+  "pandas>=2.1,<3",
+  "scipy>=1.11,<2",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8,<9",
+]
+workflow = [
+  "snakemake>=9,<10",
+  "pyyaml>=6,<7",
+]
+
+[project.scripts]
+pangwasflow = "pangwasflow.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

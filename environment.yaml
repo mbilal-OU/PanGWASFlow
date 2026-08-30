@@ -1,0 +1,15 @@
+name: pangwasflow
+channels:
+  - conda-forge
+  - bioconda
+channel_priority: strict
+dependencies:
+  - python=3.11
+  - numpy>=1.26
+  - pandas>=2.1
+  - scipy>=1.11
+  - snakemake>=9
+  - pytest>=8
+  - pip
+  - pip:
+      - -e .
