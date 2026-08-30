@@ -8,9 +8,6 @@ dependencies:
   - numpy>=1.26
   - pandas>=2.1
   - scipy>=1.11
-  - scikit-learn>=1.4
-  - statsmodels>=0.14
-  - matplotlib>=3.8
   - snakemake>=9
   - pytest>=8
   - pip
