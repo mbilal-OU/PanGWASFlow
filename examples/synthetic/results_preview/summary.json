@@ -6,14 +6,14 @@
   "cases": 126,
   "controls": 274,
   "pc_variance_explained": [
-    0.13764641992294602,
-    0.017787044375991285
+    0.1376464199229461,
+    0.01778704437599128
   ],
   "lambda_naive": 2.0622034988774156,
-  "lambda_adjusted": 1.049565893968252,
+  "lambda_adjusted": 1.049565429747617,
   "significant_lineage_markers_naive": 35,
   "significant_lineage_markers_adjusted": 0,
   "causal_feature": "feature_000",
   "causal_qvalue_naive": 1.97495841691655e-06,
-  "causal_qvalue_adjusted": 8.802182749453653e-07
+  "causal_qvalue_adjusted": 8.802183345246051e-07
 }
