@@ -56,15 +56,77 @@ jobs:
           }
           Path('/tmp/figshare_manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
           print(json.dumps(manifest, indent=2))
-          assert manifest['files'], 'Figshare record returned no files'
+          assert manifest['title'] == 'pyseer tutorial', manifest
+          assert manifest['doi'] == '10.6084/m9.figshare.7588832.v1', manifest
+          assert manifest['license']['name'] == 'CC BY 4.0', manifest
+          assert len(manifest['files']) == 1, manifest
+          source = manifest['files'][0]
+          assert source['id'] == 14091179, source
+          assert source['name'] == 'pyseer_tutorial.tar.bz2', source
+          assert source['size'] == 395485754, source
+          assert source['computed_md5'] == 'd7d5db5f931d7d8233199d416355f2d1', source
           PY
-      - name: Verify expected tutorial record
+
+  inspect-published-inputs:
+    needs: figshare-provenance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore cached Figshare archive
+        id: cache-archive
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/pyseer_tutorial.tar.bz2
+          key: figshare-14091179-d7d5db5f931d7d8233199d416355f2d1
+      - name: Download archive when cache is empty
+        if: steps.cache-archive.outputs.cache-hit != 'true'
+        env:
+          ARCHIVE: ${{ runner.temp }}/pyseer_tutorial.tar.bz2
+        run: |
+          curl --fail --location --retry 3 \
+            https://ndownloader.figshare.com/files/14091179 \
+            --output "$ARCHIVE"
+      - name: Verify published checksum and size
+        env:
+          ARCHIVE: ${{ runner.temp }}/pyseer_tutorial.tar.bz2
+        run: |
+          echo 'd7d5db5f931d7d8233199d416355f2d1  '${ARCHIVE} | md5sum --check --status
+          test "$(stat -c%s "$ARCHIVE")" -eq 395485754
+      - name: Extract only phenotype and accessory-gene inputs
+        env:
+          ARCHIVE: ${{ runner.temp }}/pyseer_tutorial.tar.bz2
+        run: |
+          mkdir -p /tmp/pangwasflow-pneumo
+          tar -xjf "$ARCHIVE" -C /tmp/pangwasflow-pneumo \
+            --wildcards --no-anchored \
+            'resistances.pheno' 'gene_presence_absence.Rtab'
+          find /tmp/pangwasflow-pneumo -type f -maxdepth 4 -print
+      - name: Inspect case-study input dimensions
         run: |
           python - <<'PY'
-          import json
+          import csv
           from pathlib import Path
-          manifest = json.loads(Path('/tmp/figshare_manifest.json').read_text())
-          title = str(manifest.get('title') or '').lower()
-          assert 'pyseer' in title, manifest
-          print(f"Resolved {len(manifest['files'])} downloadable object(s) for {manifest['title']}")
+
+          root = Path('/tmp/pangwasflow-pneumo')
+          phenotype = next(root.rglob('resistances.pheno'))
+          rtab = next(root.rglob('gene_presence_absence.Rtab'))
+
+          with phenotype.open() as handle:
+              phenotype_rows = list(csv.reader(handle, delimiter='\t'))
+          with rtab.open() as handle:
+              reader = csv.reader(handle, delimiter='\t')
+              header = next(reader)
+              feature_count = sum(1 for _ in reader)
+
+          print('phenotype path:', phenotype)
+          print('phenotype header:', phenotype_rows[0])
+          print('phenotype rows excluding header:', len(phenotype_rows) - 1)
+          print('phenotype preview:', phenotype_rows[1:4])
+          print('Rtab path:', rtab)
+          print('Rtab first column:', header[0])
+          print('Rtab sample columns:', len(header) - 1)
+          print('Rtab feature rows:', feature_count)
+
+          assert len(header) - 1 == 616, len(header) - 1
+          assert feature_count == 10944, feature_count
           PY
