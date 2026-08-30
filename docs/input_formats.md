@@ -16,7 +16,7 @@ For pyseer-style phenotype tables, specify the existing columns explicitly, for 
 
 ## Core-SNP or other binary feature matrix
 
-Sample-by-feature TSV/CSV. Each genomic feature must be encoded as `0` or `1` with no missing values in the current adapter.
+Sample-by-feature TSV/CSV. Each genomic feature must be encoded as `0` or `1` with no missing values in the current generic matrix adapter.
 
 ```text
 sample_id\tsnp_chr1_105\tsnp_chr1_812\tsnp_chr2_44
@@ -24,11 +24,11 @@ isolate_001\t0\t1\t0
 isolate_002\t1\t1\t0
 ```
 
-This representation is suitable for a precomputed biallelic SNP matrix, unitig matrix, k-mer matrix, or another binary feature set. Missing-genotype handling remains an upstream responsibility so that missingness is never silently interpreted as absence.
+This representation is suitable for a precomputed biallelic SNP matrix, unitig matrix, k-mer matrix, or another binary feature set. Missing-genotype handling remains explicit so that missingness is never silently interpreted as absence.
 
 ## Roary/Panaroo accessory genes
 
-`gene_presence_absence.csv` files are converted to a sample-by-gene binary matrix. A non-empty locus entry is treated as gene-family presence and an empty entry as absence.
+`gene_presence_absence.csv` files are converted to a sample-by-gene binary matrix. A non-empty locus entry is treated as gene-family presence and an empty entry as absence, matching the structure of these pangenome tables.
 
 ```bash
 pangwasflow prepare \
@@ -40,17 +40,24 @@ pangwasflow prepare \
 
 ## Rtab presence/absence matrices
 
-SEER/pyseer-style `.Rtab` files are gene-by-sample binary matrices with a feature identifier in the first column and one 0/1 column per sample. PanGWASFlow validates the matrix and transposes it internally to the same sample-by-feature representation used by the other adapters.
+SEER/pyseer-style `.Rtab` files are gene-by-sample matrices with a feature identifier in the first column and one sample column per isolate. PanGWASFlow recognizes the same four per-sample tokens accepted by pyseer for Rtab input:
+
+- `1`: present
+- `0`: absent
+- `.`: missing
+- blank cell: missing
+
+PanGWASFlow preserves `.` and blank cells as missing values during parsing. The current PCA and association layer requires complete features, so any feature containing a missing observation is **explicitly removed during feature QC** and recorded with `reason=missingness_filter`. Missing observations are never converted to absence and are not silently imputed.
 
 ```text
 Gene\tsample_1\tsample_2\tsample_3
 geneA\t1\t0\t1
-geneB\t0\t1\t1
+geneB\t0\t.\t1
 ```
 
 ```bash
 pangwasflow prepare \
-  --features gene_presence_absence.Rtab \
+  --features gene_presence_absence.Rtab.gz \
   --metadata phenotypes.tsv \
   --format rtab \
   --sample-id-column samples \
@@ -59,6 +66,15 @@ pangwasflow prepare \
 ```
 
 Compressed Rtab files are supported through pandas compression inference when their file extension identifies the compression format.
+
+## Feature QC
+
+For prepared binary analyses, PanGWASFlow reports both observed prevalence and missingness in `feature_qc.tsv`. A feature is currently retained only when:
+
+1. it has no missing observations after sample alignment, and
+2. its prevalence falls between the configured minimum and maximum thresholds.
+
+This conservative complete-feature policy keeps the current statistical model unambiguous. More flexible missing-data policies, if added later, should remain explicit user choices rather than implicit conversions.
 
 ## Matrix preparation
 
@@ -72,7 +88,7 @@ pangwasflow prepare \
   --outdir results/prepared
 ```
 
-Preparation writes aligned metadata, the retained binary feature matrix, feature-level prevalence QC, sample-intersection details, and a machine-readable summary.
+Preparation writes aligned metadata, the retained binary feature matrix, feature-level prevalence/missingness QC, sample-intersection details, and a machine-readable summary.
 
 ## Association analysis
 
@@ -88,6 +104,8 @@ The current analysis writes PCA structure covariates, an unadjusted Fisher scan,
 
 ## External format validation
 
-The `Pyseer format compatibility` GitHub Actions workflow fetches the canonical pyseer test pairing at pinned commit `60507f69ed464f55300cc631b9ea324095bdef5d`: `tests/subset.pheno` and `tests/presence_absence.Rtab.gz`. The files are fetched at runtime rather than copied into PanGWASFlow. This is the same Rtab/phenotype pairing exercised by pyseer's own command-line test suite. PanGWASFlow verifies sample alignment, prevalence filtering, baseline association, PCA-adjusted association, and machine-readable summaries.
+The `Pyseer format compatibility` GitHub Actions workflow fetches the canonical pyseer test pairing at pinned commit `60507f69ed464f55300cc631b9ea324095bdef5d`: `tests/subset.pheno` and `tests/presence_absence.Rtab.gz`. The files are fetched at runtime rather than copied into PanGWASFlow. This is the same Rtab/phenotype pairing exercised by pyseer's own command-line test suite.
+
+The external test verifies parsing of pyseer's Rtab missing-value conventions, 50-sample alignment, complete-feature and prevalence filtering, baseline association, PCA-adjusted association, and machine-readable summaries.
 
 This is a file-format and workflow-integration validation. It is not presented as a biological result or as a replication of the full 616-genome penicillin-resistance tutorial.
