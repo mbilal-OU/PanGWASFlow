@@ -1,0 +1,24 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+type: object
+required: [demo]
+properties:
+  demo:
+    type: object
+    required: [seed, samples, features, pcs, alpha]
+    properties:
+      seed:
+        type: integer
+      samples:
+        type: integer
+        minimum: 80
+      features:
+        type: integer
+        minimum: 20
+      pcs:
+        type: integer
+        minimum: 1
+        maximum: 10
+      alpha:
+        type: number
+        exclusiveMinimum: 0
+        exclusiveMaximum: 1
