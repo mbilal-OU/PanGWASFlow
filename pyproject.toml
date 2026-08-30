@@ -19,6 +19,8 @@ dependencies = [
 [project.optional-dependencies]
 test = [
   "pytest>=8,<9",
+]
+workflow = [
   "snakemake>=9,<10",
   "pyyaml>=6,<7",
 ]
