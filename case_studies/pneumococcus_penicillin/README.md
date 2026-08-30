@@ -1,6 +1,6 @@
 # Pneumococcal penicillin-resistance case study
 
-This case study is being built as PanGWASFlow's first public-data validation beyond synthetic benchmarks.
+This case study is PanGWASFlow's first published-data validation beyond synthetic benchmarks.
 
 ## Dataset
 
@@ -8,27 +8,41 @@ The source dataset is the public pyseer tutorial collection for penicillin resis
 
 - Figshare DOI: `10.6084/m9.figshare.7588832`
 - Figshare article ID: `7588832`
-- Population described by the pyseer tutorial: 616 pneumococcal genomes collected in Massachusetts
-- Phenotyped isolates reported by the tutorial: 603
-- Relevant published inputs include `resistances.pheno`, `gene_presence_absence.Rtab`, `snps.vcf.gz`, `core_genome_aln.tree`, and reference annotation files.
+- Figshare version resolved by CI: `10.6084/m9.figshare.7588832.v1`
+- License: CC BY 4.0
+- Published archive: `pyseer_tutorial.tar.bz2`
+- Archive size: 395,485,754 bytes
+- Published MD5: `d7d5db5f931d7d8233199d416355f2d1`
+- Genomes represented in the accessory-gene matrix: 616
+- Phenotyped isolates: 603
+- Accessory-gene families in the Rtab input: 10,944
 
-PanGWASFlow does not vendor the source dataset. The GitHub Actions validation resolves the Figshare record at runtime, records the published file manifest, and will download only the inputs required for the analysis being validated.
+PanGWASFlow does not vendor the source dataset. GitHub Actions resolves the Figshare record, verifies the published archive checksum and size, and extracts only the phenotype, accessory-gene matrix, and Mash distance matrix required for this validation path.
 
 ## Scientific scope
 
-The first case-study layer will focus on a reproducible genotype-to-phenotype association analysis and on diagnostics for population structure, feature frequency, and multiple testing. It is intended as a reproducibility and software-validation example, not as a claim of a new resistance mechanism.
+The current case-study layer evaluates accessory-gene association with binary penicillin resistance. It is a reproducibility and software-validation example, not a claim of a new resistance mechanism.
 
-The published pyseer tutorial reports that its SNP analysis recovers the established penicillin-binding-protein loci `pbp2x`, `pbp1a`, and `pbp2b`. These published results provide positive controls for evaluating a future PanGWASFlow SNP-coordinate workflow. Accessory-gene results will be treated as association signals requiring biological interpretation rather than causal proof.
+The analysis uses the published `mash.tsv` genomic distance matrix to estimate population structure by classical multidimensional scaling. Eight MDS components are included as fixed-effect covariates, matching the structure dimensionality used in the reference pyseer tutorial. The association implementation and feature filtering are PanGWASFlow's own, so numerical values are not expected to be identical to pyseer.
 
-## Planned PanGWASFlow stages
+The published pyseer tutorial also reports that its SNP analysis recovers the established penicillin-binding-protein loci `pbp2x`, `pbp1a`, and `pbp2b`. Those provide positive controls for a later SNP-coordinate validation layer.
 
-1. Resolve and record the public Figshare manifest.
-2. Fetch the smallest published files needed for each validation path.
-3. Normalize binary phenotype and genomic feature inputs without changing missing-value meaning.
-4. Report sample overlap and feature QC before association testing.
-5. Compare baseline and population-structure-adjusted results.
-6. Generate data-driven PCA, QQ, association, and top-hit figures.
-7. Preserve a compact result preview and exact source provenance in the repository.
+## PanGWASFlow validation stages
+
+1. Resolve and verify the public Figshare record.
+2. Verify archive size and MD5 before analysis.
+3. Extract `resistances.pheno`, `gene_presence_absence.Rtab`, and `mash.tsv` only.
+4. Align the 603 phenotyped isolates to the 616-genome feature and distance inputs.
+5. Preserve Rtab missing-value semantics and apply explicit feature QC.
+6. Retain features between 1% and 99% prevalence.
+7. Compute eight classical-MDS population-structure covariates from Mash distances.
+8. Run unadjusted Fisher and structure-adjusted logistic association scans.
+9. Report genomic inflation, multiple-testing adjusted results, and complete machine-readable association tables.
+10. Generate figures only from the audited CI outputs.
+
+## Interpretation guardrails
+
+Accessory-gene hits are association signals, not proof of causality. Residual genomic inflation, linked gene families, lineage effects, phenotype quality, and annotation context must be evaluated before biological interpretation. The README will only display real-data figures after the CI outputs pass that audit.
 
 ## References
 
