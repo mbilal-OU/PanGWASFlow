@@ -6,10 +6,8 @@ import json
 import numpy as np
 import pandas as pd
 from scipy.special import expit
-from scipy.stats import fisher_exact
 
-from .association import adjusted_logistic_scan
-from .multiple_testing import benjamini_hochberg
+from .association import adjusted_logistic_scan, fisher_scan
 from .plots import write_demo_figures
 from .structure import genomic_inflation, pca_scores
 
@@ -34,21 +32,6 @@ def make_demo(seed: int = 42, samples: int = 400, features: int = 120) -> tuple[
     roles = ["causal"] + ["lineage_marker"] * 35 + ["null"] * (features - 36)
     truth = pd.DataFrame({"feature": feature_names, "role": roles})
     return feature_table, metadata, truth
-
-
-def fisher_scan(features: pd.DataFrame, metadata: pd.DataFrame) -> pd.DataFrame:
-    """Run an unadjusted 2x2 association scan."""
-    merged = metadata.merge(features, on="sample_id", how="inner")
-    rows = []
-    for column in features.columns:
-        if column == "sample_id":
-            continue
-        table = pd.crosstab(merged[column], merged["label"]).reindex(index=[0, 1], columns=[0, 1], fill_value=0)
-        odds_ratio, pvalue = fisher_exact(table.to_numpy())
-        rows.append({"feature": column, "odds_ratio": float(odds_ratio), "pvalue": float(pvalue), "prevalence": float(merged[column].mean())})
-    result = pd.DataFrame(rows)
-    result["qvalue"] = benjamini_hochberg(result["pvalue"].to_numpy())
-    return result.sort_values("pvalue").reset_index(drop=True)
 
 
 def run_demo(outdir: str | Path, seed: int = 42, samples: int = 400, features: int = 120, pcs: int = 2) -> None:
