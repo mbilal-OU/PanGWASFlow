@@ -6,12 +6,14 @@ on:
       - '.github/workflows/pneumococcus-case-study.yml'
       - 'case_studies/pneumococcus_penicillin/**'
       - 'src/pangwasflow/**'
+      - 'tests/**'
   push:
     branches: [main]
     paths:
       - '.github/workflows/pneumococcus-case-study.yml'
       - 'case_studies/pneumococcus_penicillin/**'
       - 'src/pangwasflow/**'
+      - 'tests/**'
   workflow_dispatch:
 
 permissions:
@@ -96,34 +98,38 @@ jobs:
         run: |
           echo 'd7d5db5f931d7d8233199d416355f2d1  '${ARCHIVE} | md5sum --check --status
           test "$(stat -c%s "$ARCHIVE")" -eq 395485754
-      - name: Extract only phenotype and accessory-gene inputs
+      - name: Extract only phenotype, accessory genes, and Mash distances
         env:
           ARCHIVE: ${{ runner.temp }}/pyseer_tutorial.tar.bz2
         run: |
           mkdir -p /tmp/pangwasflow-pneumo
           tar -xjf "$ARCHIVE" -C /tmp/pangwasflow-pneumo \
             --wildcards --no-anchored \
-            'resistances.pheno' 'gene_presence_absence.Rtab'
+            'resistances.pheno' 'gene_presence_absence.Rtab' 'mash.tsv'
       - name: Verify case-study input dimensions
         run: |
           python - <<'PY'
           import csv
           from pathlib import Path
+          import pandas as pd
 
           root = Path('/tmp/pangwasflow-pneumo')
           phenotype = next(root.rglob('resistances.pheno'))
           rtab = next(root.rglob('gene_presence_absence.Rtab'))
+          mash = next(root.rglob('mash.tsv'))
           with phenotype.open() as handle:
               phenotype_rows = list(csv.reader(handle, delimiter='\t'))
           with rtab.open() as handle:
               reader = csv.reader(handle, delimiter='\t')
               header = next(reader)
               feature_count = sum(1 for _ in reader)
+          distance = pd.read_csv(mash, sep='\t', index_col=0)
           assert phenotype_rows[0] == ['samples', 'penicillin'], phenotype_rows[0]
           assert len(phenotype_rows) - 1 == 603, len(phenotype_rows) - 1
           assert header[0] == 'Gene', header[0]
           assert len(header) - 1 == 616, len(header) - 1
           assert feature_count == 10944, feature_count
+          assert distance.shape == (616, 616), distance.shape
           PY
       - name: Install PanGWASFlow
         run: pip install -e .
@@ -135,20 +141,21 @@ jobs:
             --format rtab \
             --sample-id-column samples \
             --label-column penicillin \
-            --min-prevalence 0.02 \
-            --max-prevalence 0.98 \
+            --min-prevalence 0.01 \
+            --max-prevalence 0.99 \
             --min-samples 500 \
             --outdir /tmp/pangwasflow-pneumo/prepared
           cat /tmp/pangwasflow-pneumo/prepared/input_summary.json
-      - name: Run eight-PC structure-adjusted accessory-gene GWAS
+      - name: Run eight-MDS structure-adjusted accessory-gene GWAS
         run: |
           pangwasflow analyze \
             --features /tmp/pangwasflow-pneumo/prepared/features_qc.tsv \
             --metadata /tmp/pangwasflow-pneumo/prepared/metadata_qc.tsv \
+            --structure-distance /tmp/pangwasflow-pneumo/mash.tsv \
             --pcs 8 \
             --outdir /tmp/pangwasflow-pneumo/gwas
           cat /tmp/pangwasflow-pneumo/gwas/gwas_summary.json
-      - name: Build compact case-study preview
+      - name: Build audited case-study artifact
         run: |
           python - <<'PY'
           import json
@@ -164,24 +171,27 @@ jobs:
           assert prep['samples_retained'] == 603, prep
           assert prep['samples_features'] == 616, prep
           assert prep['features_input'] == 10944, prep
-          assert prep['features_retained'] > 1000, prep
+          assert prep['features_retained'] > 5000, prep
           assert gwas['samples'] == 603, gwas
           assert gwas['features'] == prep['features_retained'], (gwas, prep)
-          assert gwas['pcs'] == 8, gwas
+          assert gwas['structure_method'] == 'distance_mds', gwas
+          assert gwas['structure_components'] == 8, gwas
+          assert gwas['lambda_adjusted'] < gwas['lambda_naive'], gwas
 
-          out = root / 'preview'
+          out = root / 'artifact'
           out.mkdir(exist_ok=True)
           (out / 'input_summary.json').write_text(json.dumps(prep, indent=2) + '\n')
           (out / 'gwas_summary.json').write_text(json.dumps(gwas, indent=2) + '\n')
-          naive.head(100).to_csv(out / 'top100_naive.tsv', sep='\t', index=False)
-          adjusted.head(100).to_csv(out / 'top100_adjusted.tsv', sep='\t', index=False)
+          naive.to_csv(out / 'association_naive.tsv', sep='\t', index=False)
+          adjusted.to_csv(out / 'association_adjusted.tsv', sep='\t', index=False)
+          (root / 'gwas/structure_covariates.tsv').replace(out / 'structure_covariates.tsv')
           print('Top adjusted accessory-gene associations:')
           print(adjusted.head(20).to_string(index=False))
           PY
-      - name: Upload compact validation artifact
+      - name: Upload audited validation artifact
         uses: actions/upload-artifact@v4
         with:
           name: pneumococcus-penicillin-accessory-gwas
-          path: /tmp/pangwasflow-pneumo/preview
+          path: /tmp/pangwasflow-pneumo/artifact
           if-no-files-found: error
           retention-days: 14
