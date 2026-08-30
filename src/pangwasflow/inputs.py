@@ -62,6 +62,17 @@ def _validate_sample_ids(table: pd.DataFrame, sample_id_column: str, table_name:
     return values
 
 
+def _unique_feature_names(raw_names: pd.Series, prefix: str = "feature") -> list[str]:
+    names: list[str] = []
+    seen: dict[str, int] = {}
+    for index, raw in enumerate(raw_names.astype(str)):
+        base = raw.strip() or f"{prefix}_{index:05d}"
+        count = seen.get(base, 0)
+        seen[base] = count + 1
+        names.append(base if count == 0 else f"{base}__{count + 1}")
+    return names
+
+
 def read_metadata(
     path: str | Path,
     sample_id_column: str = "sample_id",
@@ -109,18 +120,36 @@ def read_gene_presence_absence(path: str | Path) -> pd.DataFrame:
     if not sample_columns:
         raise ValueError("no sample columns detected in gene presence/absence table")
 
-    gene_names: list[str] = []
-    seen: dict[str, int] = {}
-    for index, raw in enumerate(table["Gene"].astype(str)):
-        base = raw.strip() or f"gene_cluster_{index:05d}"
-        count = seen.get(base, 0)
-        seen[base] = count + 1
-        gene_names.append(base if count == 0 else f"{base}__{count + 1}")
-
+    gene_names = _unique_feature_names(table["Gene"], prefix="gene_cluster")
     presence = table[sample_columns].apply(lambda column: column.astype(str).str.strip().ne(""))
     matrix = presence.to_numpy(dtype=np.int8).T
     result = pd.DataFrame(matrix, columns=gene_names)
     result.insert(0, "sample_id", [str(column).strip() for column in sample_columns])
+    return result
+
+
+def read_rtab_presence_absence(path: str | Path) -> pd.DataFrame:
+    """Read pyseer/SEER-style Rtab gene presence/absence data and transpose to sample-by-feature form."""
+    table = pd.read_csv(path, sep="\t", compression="infer")
+    if table.empty or table.shape[1] < 2:
+        raise ValueError("Rtab input must contain a feature column and at least one sample column")
+    feature_column = str(table.columns[0])
+    feature_names = _unique_feature_names(table[feature_column], prefix="feature")
+    sample_columns = [str(column).strip() for column in table.columns[1:]]
+    if any(not sample for sample in sample_columns):
+        raise ValueError("Rtab input contains an empty sample column name")
+    if len(sample_columns) != len(set(sample_columns)):
+        raise ValueError("Rtab input contains duplicate sample column names")
+
+    numeric = table.iloc[:, 1:].apply(pd.to_numeric, errors="coerce")
+    if numeric.isna().any().any():
+        raise ValueError("Rtab input contains missing or non-numeric values; expected complete 0/1 presence/absence data")
+    invalid = ~numeric.isin([0, 1])
+    if invalid.any().any():
+        raise ValueError("Rtab input contains values outside 0/1")
+
+    result = pd.DataFrame(numeric.to_numpy(dtype=np.int8).T, columns=feature_names)
+    result.insert(0, "sample_id", sample_columns)
     return result
 
 
@@ -132,12 +161,13 @@ def align_samples(
     """Intersect feature and metadata sample IDs while preserving metadata order."""
     feature_ids = set(features["sample_id"].astype(str))
     metadata_ids = metadata["sample_id"].astype(str).tolist()
+    metadata_id_set = set(metadata_ids)
     retained = [sample for sample in metadata_ids if sample in feature_ids]
     if len(retained) < int(min_samples):
         raise ValueError(f"only {len(retained)} samples overlap; at least {min_samples} are required")
     dropped = {
         "metadata_only": [sample for sample in metadata_ids if sample not in feature_ids],
-        "features_only": [sample for sample in features["sample_id"].astype(str) if sample not in set(metadata_ids)],
+        "features_only": [sample for sample in features["sample_id"].astype(str) if sample not in metadata_id_set],
     }
     metadata_out = metadata.set_index("sample_id").loc[retained].reset_index()
     features_out = features.set_index("sample_id").loc[retained].reset_index()
@@ -186,8 +216,10 @@ def prepare_inputs(
         features = read_binary_feature_matrix(feature_path, sample_id_column=sample_id_column)
     elif feature_format in {"roary", "panaroo", "gene-pa"}:
         features = read_gene_presence_absence(feature_path)
+    elif feature_format == "rtab":
+        features = read_rtab_presence_absence(feature_path)
     else:
-        raise ValueError("feature_format must be one of: matrix, roary, panaroo, gene-pa")
+        raise ValueError("feature_format must be one of: matrix, roary, panaroo, gene-pa, rtab")
     metadata = read_metadata(metadata_path, sample_id_column=sample_id_column, label_column=label_column)
     features_input = features.shape[1] - 1
     features_aligned, metadata_aligned, dropped = align_samples(features, metadata, min_samples=min_samples)
