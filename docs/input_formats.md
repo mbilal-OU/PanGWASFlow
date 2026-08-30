@@ -88,6 +88,6 @@ The current analysis writes PCA structure covariates, an unadjusted Fisher scan,
 
 ## External format validation
 
-The `Pyseer format compatibility` GitHub Actions workflow fetches two small public test files from the canonical pyseer repository at pinned commit `60507f69ed464f55300cc631b9ea324095bdef5d`: `tests/subset.pheno` and `tests/presence_absence_smaller.Rtab`. The files are fetched at runtime rather than copied into PanGWASFlow. The workflow verifies that 50 samples align, features survive QC, and both baseline and PCA-adjusted association outputs are produced.
+The `Pyseer format compatibility` GitHub Actions workflow fetches the canonical pyseer test pairing at pinned commit `60507f69ed464f55300cc631b9ea324095bdef5d`: `tests/subset.pheno` and `tests/presence_absence.Rtab.gz`. The files are fetched at runtime rather than copied into PanGWASFlow. This is the same Rtab/phenotype pairing exercised by pyseer's own command-line test suite. PanGWASFlow verifies sample alignment, prevalence filtering, baseline association, PCA-adjusted association, and machine-readable summaries.
 
-This is a file-format and workflow-integration validation. It is not presented as a biological result or as a replication of the full pyseer penicillin-resistance tutorial.
+This is a file-format and workflow-integration validation. It is not presented as a biological result or as a replication of the full 616-genome penicillin-resistance tutorial.
