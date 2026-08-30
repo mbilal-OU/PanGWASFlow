@@ -115,6 +115,7 @@ jobs:
           mash dist /tmp/pangwasflow-pneumo/mash_sketch.msh /tmp/pangwasflow-pneumo/mash_sketch.msh > /tmp/pangwasflow-pneumo/mash.long.tsv
           python - <<'PY'
           from pathlib import Path
+          import numpy as np
           import pandas as pd
 
           def sample_name(value: str) -> str:
@@ -138,11 +139,15 @@ jobs:
                   rows.append((left, right, distance))
                   samples.update((left, right))
           ordered = sorted(samples)
-          matrix = pd.DataFrame(0.0, index=ordered, columns=ordered)
+          if len(ordered) != 616:
+              raise ValueError(f'Expected 616 Mash samples, observed {len(ordered)}')
+          lookup = {sample: index for index, sample in enumerate(ordered)}
+          values = np.zeros((len(ordered), len(ordered)), dtype=float)
           for left, right, distance in rows:
-              matrix.loc[left, right] = distance
-          if matrix.shape != (616, 616):
-              raise ValueError(f'Expected 616 Mash samples, observed {matrix.shape}')
+              values[lookup[left], lookup[right]] = distance
+          if not np.allclose(values, values.T, atol=1e-12, rtol=1e-9):
+              raise ValueError('Mash distance matrix is not symmetric')
+          matrix = pd.DataFrame(values, index=ordered, columns=ordered)
           matrix.to_csv('/tmp/pangwasflow-pneumo/mash.tsv', sep='\t')
           print('Mash distance matrix:', matrix.shape)
           PY
