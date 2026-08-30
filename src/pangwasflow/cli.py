@@ -29,11 +29,16 @@ def main() -> None:
     prepare.add_argument("--max-prevalence", type=float, default=0.99)
     prepare.add_argument("--min-samples", type=int, default=20)
 
-    analyze = subparsers.add_parser("analyze", help="run baseline and PCA-adjusted GWAS on prepared binary inputs")
+    analyze = subparsers.add_parser("analyze", help="run baseline and structure-adjusted GWAS on prepared binary inputs")
     analyze.add_argument("--features", required=True, help="prepared features_qc.tsv")
     analyze.add_argument("--metadata", required=True, help="prepared metadata_qc.tsv")
     analyze.add_argument("--outdir", default="results/gwas")
-    analyze.add_argument("--pcs", type=int, default=2)
+    analyze.add_argument("--pcs", type=int, default=2, help="number of PCA or MDS structure components")
+    analyze.add_argument(
+        "--structure-distance",
+        default=None,
+        help="optional square TSV genomic distance matrix; when supplied, classical MDS replaces feature-derived PCA",
+    )
 
     args = parser.parse_args()
     if args.command == "demo":
@@ -51,7 +56,13 @@ def main() -> None:
             min_samples=args.min_samples,
         )
     elif args.command == "analyze":
-        run_prepared_paths(args.features, args.metadata, outdir=args.outdir, pcs=args.pcs)
+        run_prepared_paths(
+            args.features,
+            args.metadata,
+            outdir=args.outdir,
+            pcs=args.pcs,
+            distance_matrix_path=args.structure_distance,
+        )
 
 
 if __name__ == "__main__":
