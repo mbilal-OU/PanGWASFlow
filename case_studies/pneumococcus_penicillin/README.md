@@ -17,13 +17,13 @@ The source dataset is the public pyseer tutorial collection for penicillin resis
 - Phenotyped isolates: 603
 - Accessory-gene families in the Rtab input: 10,944
 
-PanGWASFlow does not vendor the source dataset. GitHub Actions resolves the Figshare record, verifies the published archive checksum and size, and extracts only the phenotype, accessory-gene matrix, and Mash distance matrix required for this validation path.
+PanGWASFlow does not vendor the source dataset. GitHub Actions resolves the Figshare record, verifies the published archive checksum and size, and extracts only the phenotype, accessory-gene matrix, and published Mash sketch required for this validation path.
 
 ## Scientific scope
 
 The current case-study layer evaluates accessory-gene association with binary penicillin resistance. It is a reproducibility and software-validation example, not a claim of a new resistance mechanism.
 
-The analysis uses the published `mash.tsv` genomic distance matrix to estimate population structure by classical multidimensional scaling. Eight MDS components are included as fixed-effect covariates, matching the structure dimensionality used in the reference pyseer tutorial. The association implementation and feature filtering are PanGWASFlow's own, so numerical values are not expected to be identical to pyseer.
+The archive contains `mash_sketch.msh`, which is the published Mash sketch used by the reference tutorial. CI reconstructs the all-vs-all Mash distance matrix from that sketch, validates all 616 sample identifiers, and then estimates population structure by classical multidimensional scaling. Eight MDS components are included as fixed-effect covariates, matching the structure dimensionality used in the reference pyseer tutorial. The association implementation and feature filtering are PanGWASFlow's own, so numerical values are not expected to be identical to pyseer.
 
 The published pyseer tutorial also reports that its SNP analysis recovers the established penicillin-binding-protein loci `pbp2x`, `pbp1a`, and `pbp2b`. Those provide positive controls for a later SNP-coordinate validation layer.
 
@@ -31,14 +31,15 @@ The published pyseer tutorial also reports that its SNP analysis recovers the es
 
 1. Resolve and verify the public Figshare record.
 2. Verify archive size and MD5 before analysis.
-3. Extract `resistances.pheno`, `gene_presence_absence.Rtab`, and `mash.tsv` only.
-4. Align the 603 phenotyped isolates to the 616-genome feature and distance inputs.
-5. Preserve Rtab missing-value semantics and apply explicit feature QC.
-6. Retain features between 1% and 99% prevalence.
-7. Compute eight classical-MDS population-structure covariates from Mash distances.
-8. Run unadjusted Fisher and structure-adjusted logistic association scans.
-9. Report genomic inflation, multiple-testing adjusted results, and complete machine-readable association tables.
-10. Generate figures only from the audited CI outputs.
+3. Extract `resistances.pheno`, `gene_presence_absence.Rtab`, and `mash_sketch.msh` only.
+4. Reconstruct the 616-by-616 Mash distance matrix from the published sketch.
+5. Align the 603 phenotyped isolates to the 616-genome feature and distance inputs.
+6. Preserve Rtab missing-value semantics and apply explicit feature QC.
+7. Retain features between 1% and 99% prevalence.
+8. Compute eight classical-MDS population-structure covariates from Mash distances.
+9. Run unadjusted Fisher and structure-adjusted logistic association scans.
+10. Report genomic inflation, multiple-testing adjusted results, and complete machine-readable association tables.
+11. Generate figures only from the audited CI outputs.
 
 ## Interpretation guardrails
 
