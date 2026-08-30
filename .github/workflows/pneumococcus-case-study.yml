@@ -106,6 +106,8 @@ jobs:
           tar -xjf "$ARCHIVE" -C /tmp/pangwasflow-pneumo \
             --wildcards --no-anchored \
             'resistances.pheno' 'gene_presence_absence.Rtab' 'mash_sketch.msh'
+      - name: Install PanGWASFlow
+        run: pip install -e .
       - name: Reconstruct Mash distance matrix
         run: |
           sudo apt-get update -qq
@@ -170,8 +172,6 @@ jobs:
           assert distance.shape == (616, 616), distance.shape
           assert set(phenotype_rows[i][0] for i in range(1, len(phenotype_rows))).issubset(set(distance.index.astype(str)))
           PY
-      - name: Install PanGWASFlow
-        run: pip install -e .
       - name: Prepare published accessory-gene matrix
         run: |
           pangwasflow prepare \
