@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   figshare-provenance:
@@ -75,6 +75,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -132,10 +134,9 @@ jobs:
                       return name[:-len(suffix)]
               return name
 
-          long_path = Path('/tmp/pangwasflow-pneumo/mash.long.tsv')
           rows = []
           samples = set()
-          with long_path.open() as handle:
+          with Path('/tmp/pangwasflow-pneumo/mash.long.tsv').open() as handle:
               for line in handle:
                   fields = line.rstrip('\n').split('\t')
                   if len(fields) < 3:
@@ -154,10 +155,7 @@ jobs:
               values[lookup[left], lookup[right]] = distance
           if not np.allclose(values, values.T, atol=1e-12, rtol=1e-9):
               raise ValueError('Mash distance matrix is not symmetric')
-          matrix = pd.DataFrame(values, index=ordered, columns=ordered)
-          matrix.to_csv('/tmp/pangwasflow-pneumo/mash.tsv', sep='\t')
-          print('Mash distance matrix:', matrix.shape)
-          print('Mash sample preview:', ordered[:5])
+          pd.DataFrame(values, index=ordered, columns=ordered).to_csv('/tmp/pangwasflow-pneumo/mash.tsv', sep='\t')
           PY
       - name: Verify case-study input dimensions
         run: |
@@ -169,14 +167,13 @@ jobs:
           root = Path('/tmp/pangwasflow-pneumo')
           phenotype = next(root.rglob('resistances.pheno'))
           rtab = next(root.rglob('gene_presence_absence.Rtab'))
-          mash = root / 'mash.tsv'
           with phenotype.open() as handle:
               phenotype_rows = list(csv.reader(handle, delimiter='\t'))
           with rtab.open() as handle:
               reader = csv.reader(handle, delimiter='\t')
               header = next(reader)
               feature_count = sum(1 for _ in reader)
-          distance = pd.read_csv(mash, sep='\t', index_col=0)
+          distance = pd.read_csv(root / 'mash.tsv', sep='\t', index_col=0)
           assert phenotype_rows[0] == ['samples', 'penicillin'], phenotype_rows[0]
           assert len(phenotype_rows) - 1 == 603, len(phenotype_rows) - 1
           assert header[0] == 'Gene', header[0]
@@ -184,14 +181,8 @@ jobs:
           assert feature_count == 10944, feature_count
           assert distance.shape == (616, 616), distance.shape
           phenotype_ids = {row[0] for row in phenotype_rows[1:]}
-          distance_ids = set(distance.index.astype(str))
-          rtab_ids = set(header[1:])
-          missing_distance = sorted(phenotype_ids - distance_ids)
-          missing_rtab = sorted(phenotype_ids - rtab_ids)
-          print('Phenotype IDs missing from Mash matrix:', missing_distance[:20])
-          print('Phenotype IDs missing from Rtab:', missing_rtab[:20])
-          assert not missing_distance, missing_distance[:20]
-          assert not missing_rtab, missing_rtab[:20]
+          assert not sorted(phenotype_ids - set(distance.index.astype(str)))
+          assert not sorted(phenotype_ids - set(header[1:]))
           PY
       - name: Prepare published accessory-gene matrix
         run: |
@@ -205,7 +196,6 @@ jobs:
             --max-prevalence 0.99 \
             --min-samples 500 \
             --outdir /tmp/pangwasflow-pneumo/prepared
-          cat /tmp/pangwasflow-pneumo/prepared/input_summary.json
       - name: Run eight-MDS structure-adjusted accessory-gene GWAS
         run: |
           pangwasflow analyze \
@@ -231,12 +221,17 @@ jobs:
           assert prep['samples_retained'] == 603, prep
           assert prep['samples_features'] == 616, prep
           assert prep['features_input'] == 10944, prep
-          assert prep['features_retained'] > 5000, prep
+          assert prep['features_retained'] == 6087, prep
           assert gwas['samples'] == 603, gwas
-          assert gwas['features'] == prep['features_retained'], (gwas, prep)
+          assert gwas['features'] == 6087, gwas
           assert gwas['structure_method'] == 'distance_mds', gwas
           assert gwas['structure_components'] == 8, gwas
           assert gwas['lambda_adjusted'] < gwas['lambda_naive'], gwas
+          assert (adjusted['pvalue'] > 0).all(), 'Adjusted LRT contains zero p-values'
+          assert adjusted['fit_success'].all(), 'One or more adjusted fits failed'
+
+          cpsg = adjusted.loc[adjusted['feature'] == 'cpsG'].iloc[0]
+          assert abs(float(cpsg['pvalue']) - 1.6948634682283326e-19) / 1.6948634682283326e-19 < 1e-5, cpsg.to_dict()
 
           out = root / 'artifact'
           out.mkdir(exist_ok=True)
@@ -246,13 +241,34 @@ jobs:
           adjusted.to_csv(out / 'association_adjusted.tsv', sep='\t', index=False)
           (root / 'gwas/structure_covariates.tsv').replace(out / 'structure_covariates.tsv')
           (root / 'prepared/metadata_qc.tsv').replace(out / 'metadata_qc.tsv')
-          print('Top adjusted accessory-gene associations:')
-          print(adjusted.head(20).to_string(index=False))
           PY
+      - name: Render audited case-study figures
+        run: |
+          python case_studies/pneumococcus_penicillin/render_results.py \
+            --artifact /tmp/pangwasflow-pneumo/artifact \
+            --assets docs/assets \
+            --preview case_studies/pneumococcus_penicillin/results_preview
       - name: Upload audited validation artifact
         uses: actions/upload-artifact@v4
         with:
           name: pneumococcus-penicillin-accessory-gwas
-          path: /tmp/pangwasflow-pneumo/artifact
+          path: |
+            /tmp/pangwasflow-pneumo/artifact
+            docs/assets/pneumococcus_*.svg
+            case_studies/pneumococcus_penicillin/results_preview
           if-no-files-found: error
           retention-days: 14
+      - name: Commit audited figures and preview to PR branch
+        if: github.event_name == 'pull_request'
+        env:
+          HEAD_BRANCH: ${{ github.head_ref }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/assets/pneumococcus_*.svg case_studies/pneumococcus_penicillin/results_preview
+          if git diff --cached --quiet; then
+            echo 'Validated case-study assets are already current.'
+          else
+            git commit -m 'Regenerate pneumococcal GWAS case-study assets'
+            git push origin HEAD:${HEAD_BRANCH}
+          fi
