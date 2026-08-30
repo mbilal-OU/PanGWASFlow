@@ -72,10 +72,15 @@ flowchart LR
 - Benjamini-Hochberg FDR correction
 - genomic-inflation diagnostic
 - PCA, association-comparison, and QQ SVG figures
+- strict 0/1 phenotype metadata ingestion
+- sample-by-feature binary matrix input for precomputed SNPs, k-mers, unitigs, or other binary genomic features
+- Roary/Panaroo-style `gene_presence_absence.csv` conversion to accessory-gene matrices
+- explicit sample intersection and dropped-sample reporting
+- feature-prevalence QC with an auditable retained/dropped table
+- generic prepared-input GWAS runner
 - machine-readable TSV and JSON outputs
 - Snakemake orchestration
-- configuration and schema scaffold
-- unit tests that explicitly test confounding removal
+- unit tests that explicitly test confounding removal and input validation
 - GitHub Actions CI
 - automated regeneration of validated README assets
 - citation metadata and scientific guardrails
@@ -93,7 +98,7 @@ pip install -e '.[test]'
 snakemake --cores 1
 ```
 
-Or run the benchmark directly:
+Run the validated teaching benchmark:
 
 ```bash
 pangwasflow demo \
@@ -103,6 +108,37 @@ pangwasflow demo \
   --features 120 \
   --pcs 2
 ```
+
+Prepare a real precomputed binary SNP matrix:
+
+```bash
+pangwasflow prepare \
+  --features core_snp_matrix.tsv \
+  --metadata phenotype.tsv \
+  --format matrix \
+  --outdir results/prepared
+
+pangwasflow analyze \
+  --features results/prepared/features_qc.tsv \
+  --metadata results/prepared/metadata_qc.tsv \
+  --pcs 2 \
+  --outdir results/gwas
+```
+
+For a Roary/Panaroo accessory-gene table, use `--format roary` or `--format panaroo`. Full input specifications and QC behavior are documented in [`docs/input_formats.md`](docs/input_formats.md).
+
+## Real-input preparation outputs
+
+```text
+results/prepared/
+├── features_qc.tsv
+├── metadata_qc.tsv
+├── feature_qc.tsv
+├── sample_alignment.json
+└── input_summary.json
+```
+
+The current real-input layer intentionally expects upstream genomic feature construction. PanGWASFlow does not silently reinterpret missing genotypes as absence and does not infer phenotype meanings from free-text labels.
 
 ## Benchmark outputs
 
@@ -129,19 +165,18 @@ Microbial populations are often strongly clonal or lineage-structured. If both a
 
 ## Next analytical modules
 
-1. core-genome SNP input and association interface
-2. accessory-gene presence/absence interface
-3. k-mer interface
-4. unitig interface
-5. real public microbial phenotype case study
-6. significant-locus annotation and genomic context
-7. integrated HTML report and interactive locus explorer
+1. richer SNP metadata and genomic-coordinate handling
+2. k-mer-specific interface
+3. unitig-specific interface
+4. real public microbial phenotype case study
+5. significant-locus annotation and genomic context
+6. integrated HTML report and interactive locus explorer
 
 The genomic representations will remain separate through association testing and will be compared at the interpretation layer rather than treated as interchangeable feature types.
 
 ## Scientific guardrails
 
-Association is statistical evidence, not proof of causation. Population structure, phenotype quality, multiple testing, feature frequency, linkage, and model assumptions must be reported explicitly. See [`docs/scientific_guardrails.md`](docs/scientific_guardrails.md) and [`docs/structure_benchmark.md`](docs/structure_benchmark.md).
+Association is statistical evidence, not proof of causation. Population structure, phenotype quality, multiple testing, feature frequency, linkage, and model assumptions must be reported explicitly. See [`docs/scientific_guardrails.md`](docs/scientific_guardrails.md), [`docs/structure_benchmark.md`](docs/structure_benchmark.md), and [`docs/input_formats.md`](docs/input_formats.md).
 
 ## Repository layout
 

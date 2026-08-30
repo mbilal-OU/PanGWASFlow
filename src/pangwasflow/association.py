@@ -4,9 +4,28 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
 from scipy.special import expit
-from scipy.stats import norm
+from scipy.stats import fisher_exact, norm
 
 from .multiple_testing import benjamini_hochberg
+
+
+def fisher_scan(features: pd.DataFrame, metadata: pd.DataFrame) -> pd.DataFrame:
+    """Run an unadjusted 2x2 association scan for binary genomic features."""
+    merged = metadata.merge(features, on="sample_id", how="inner")
+    rows: list[dict[str, float | str]] = []
+    for feature in features.columns:
+        if feature == "sample_id":
+            continue
+        values = merged[feature].to_numpy(dtype=float)
+        if np.unique(values).size < 2:
+            rows.append({"feature": feature, "odds_ratio": float("nan"), "pvalue": 1.0, "prevalence": float(values.mean())})
+            continue
+        table = pd.crosstab(merged[feature], merged["label"]).reindex(index=[0, 1], columns=[0, 1], fill_value=0)
+        odds_ratio, pvalue = fisher_exact(table.to_numpy())
+        rows.append({"feature": feature, "odds_ratio": float(odds_ratio), "pvalue": float(pvalue), "prevalence": float(values.mean())})
+    result = pd.DataFrame(rows)
+    result["qvalue"] = benjamini_hochberg(result["pvalue"].to_numpy())
+    return result.sort_values("pvalue").reset_index(drop=True)
 
 
 def _logistic_wald(y: np.ndarray, design: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
