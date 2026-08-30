@@ -1,0 +1,19 @@
+{
+  "seed": 42,
+  "samples": 400,
+  "features": 120,
+  "pcs": 2,
+  "cases": 126,
+  "controls": 274,
+  "pc_variance_explained": [
+    0.13764641992294602,
+    0.017787044375991285
+  ],
+  "lambda_naive": 2.0622034988774156,
+  "lambda_adjusted": 1.049565893968252,
+  "significant_lineage_markers_naive": 35,
+  "significant_lineage_markers_adjusted": 0,
+  "causal_feature": "feature_000",
+  "causal_qvalue_naive": 1.97495841691655e-06,
+  "causal_qvalue_adjusted": 8.802182749453653e-07
+}
