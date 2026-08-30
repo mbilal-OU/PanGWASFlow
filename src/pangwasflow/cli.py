@@ -19,10 +19,10 @@ def main() -> None:
     demo.add_argument("--pcs", type=int, default=2)
 
     prepare = subparsers.add_parser("prepare", help="normalize and QC real binary genomic feature inputs")
-    prepare.add_argument("--features", required=True, help="sample-by-feature TSV/CSV or Roary/Panaroo gene table")
+    prepare.add_argument("--features", required=True, help="sample-by-feature matrix, Roary/Panaroo gene table, or Rtab file")
     prepare.add_argument("--metadata", required=True, help="phenotype metadata TSV/CSV")
     prepare.add_argument("--outdir", default="results/prepared")
-    prepare.add_argument("--format", choices=["matrix", "roary", "panaroo", "gene-pa"], default="matrix")
+    prepare.add_argument("--format", choices=["matrix", "roary", "panaroo", "gene-pa", "rtab"], default="matrix")
     prepare.add_argument("--sample-id-column", default="sample_id")
     prepare.add_argument("--label-column", default="label")
     prepare.add_argument("--min-prevalence", type=float, default=0.01)
