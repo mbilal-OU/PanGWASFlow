@@ -1,0 +1,74 @@
+name: Pyseer format compatibility
+
+on:
+  pull_request:
+    paths:
+      - 'src/pangwasflow/inputs.py'
+      - 'src/pangwasflow/real_analysis.py'
+      - 'src/pangwasflow/cli.py'
+      - 'tests/test_rtab_compatibility.py'
+      - '.github/workflows/pyseer-compatibility.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/pangwasflow/inputs.py'
+      - 'src/pangwasflow/real_analysis.py'
+      - 'src/pangwasflow/cli.py'
+      - '.github/workflows/pyseer-compatibility.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pyseer-rtab-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install PanGWASFlow
+        run: pip install -e .
+      - name: Fetch pinned public pyseer test inputs
+        run: |
+          set -euo pipefail
+          PYSEER_COMMIT=60507f69ed464f55300cc631b9ea324095bdef5d
+          BASE="https://raw.githubusercontent.com/mgalardini/pyseer/${PYSEER_COMMIT}/tests"
+          curl --fail --location --retry 3 "$BASE/subset.pheno" -o /tmp/subset.pheno
+          curl --fail --location --retry 3 "$BASE/presence_absence_smaller.Rtab" -o /tmp/presence_absence_smaller.Rtab
+      - name: Prepare public Rtab fixture
+        run: |
+          pangwasflow prepare \
+            --features /tmp/presence_absence_smaller.Rtab \
+            --metadata /tmp/subset.pheno \
+            --format rtab \
+            --sample-id-column samples \
+            --label-column binary \
+            --min-prevalence 0.01 \
+            --max-prevalence 0.99 \
+            --min-samples 20 \
+            --outdir /tmp/pyseer-prepared
+      - name: Run structure-adjusted compatibility analysis
+        run: |
+          pangwasflow analyze \
+            --features /tmp/pyseer-prepared/features_qc.tsv \
+            --metadata /tmp/pyseer-prepared/metadata_qc.tsv \
+            --pcs 2 \
+            --outdir /tmp/pyseer-gwas
+      - name: Verify external-format outputs
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          prep = json.loads(Path('/tmp/pyseer-prepared/input_summary.json').read_text())
+          gwas = json.loads(Path('/tmp/pyseer-gwas/gwas_summary.json').read_text())
+          assert prep['samples_retained'] == 50, prep
+          assert prep['features_retained'] > 0, prep
+          assert prep['cases'] + prep['controls'] == 50, prep
+          assert gwas['samples'] == 50, gwas
+          assert gwas['features'] == prep['features_retained'], (gwas, prep)
+          assert Path('/tmp/pyseer-gwas/association_naive.tsv').stat().st_size > 0
+          assert Path('/tmp/pyseer-gwas/association_adjusted.tsv').stat().st_size > 0
+          print(json.dumps({'prepared': prep, 'gwas': gwas}, indent=2))
+          PY
