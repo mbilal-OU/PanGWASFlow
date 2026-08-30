@@ -21,7 +21,7 @@ def test_prepared_binary_gwas_writes_expected_outputs(tmp_path: Path):
 
 
 def test_prepared_paths_can_use_distance_matrix(tmp_path: Path):
-    features, metadata, _ = make_demo(seed=7, samples=80, features=30)
+    features, metadata, _ = make_demo(seed=7, samples=80, features=40)
     feature_path = tmp_path / "features.tsv"
     metadata_path = tmp_path / "metadata.tsv"
     distance_path = tmp_path / "distances.tsv"
