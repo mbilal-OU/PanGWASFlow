@@ -1,0 +1,274 @@
+name: Pneumococcal case-study validation
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/pneumococcus-case-study.yml'
+      - 'case_studies/pneumococcus_penicillin/**'
+      - 'src/pangwasflow/**'
+      - 'tests/**'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/pneumococcus-case-study.yml'
+      - 'case_studies/pneumococcus_penicillin/**'
+      - 'src/pangwasflow/**'
+      - 'tests/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  figshare-provenance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Resolve Figshare record and file manifest
+        run: |
+          python - <<'PY'
+          import json
+          import urllib.request
+          from pathlib import Path
+
+          article_id = 7588832
+          url = f'https://api.figshare.com/v2/articles/{article_id}'
+          with urllib.request.urlopen(url, timeout=60) as response:
+              record = json.load(response)
+
+          manifest = {
+              'article_id': article_id,
+              'title': record.get('title'),
+              'doi': record.get('doi'),
+              'url_public_api': record.get('url_public_api'),
+              'license': record.get('license'),
+              'files': [
+                  {
+                      'id': item.get('id'),
+                      'name': item.get('name'),
+                      'size': item.get('size'),
+                      'download_url': item.get('download_url'),
+                      'computed_md5': item.get('computed_md5'),
+                  }
+                  for item in record.get('files', [])
+              ],
+          }
+          Path('/tmp/figshare_manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+          print(json.dumps(manifest, indent=2))
+          assert manifest['title'] == 'pyseer tutorial', manifest
+          assert manifest['doi'] == '10.6084/m9.figshare.7588832.v1', manifest
+          assert manifest['license']['name'] == 'CC BY 4.0', manifest
+          assert len(manifest['files']) == 1, manifest
+          source = manifest['files'][0]
+          assert source['id'] == 14091179, source
+          assert source['name'] == 'pyseer_tutorial.tar.bz2', source
+          assert source['size'] == 395485754, source
+          assert source['computed_md5'] == 'd7d5db5f931d7d8233199d416355f2d1', source
+          PY
+
+  accessory-gene-gwas:
+    needs: figshare-provenance
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Restore cached Figshare archive
+        id: cache-archive
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/pyseer_tutorial.tar.bz2
+          key: figshare-14091179-d7d5db5f931d7d8233199d416355f2d1
+      - name: Download archive when cache is empty
+        if: steps.cache-archive.outputs.cache-hit != 'true'
+        env:
+          ARCHIVE: ${{ runner.temp }}/pyseer_tutorial.tar.bz2
+        run: |
+          curl --fail --location --retry 3 \
+            https://ndownloader.figshare.com/files/14091179 \
+            --output "$ARCHIVE"
+      - name: Verify published checksum and size
+        env:
+          ARCHIVE: ${{ runner.temp }}/pyseer_tutorial.tar.bz2
+        run: |
+          echo 'd7d5db5f931d7d8233199d416355f2d1  '${ARCHIVE} | md5sum --check --status
+          test "$(stat -c%s "$ARCHIVE")" -eq 395485754
+      - name: Extract phenotype, accessory genes, and published Mash sketch
+        env:
+          ARCHIVE: ${{ runner.temp }}/pyseer_tutorial.tar.bz2
+        run: |
+          mkdir -p /tmp/pangwasflow-pneumo
+          tar -xjf "$ARCHIVE" -C /tmp/pangwasflow-pneumo \
+            --wildcards --no-anchored \
+            'resistances.pheno' 'gene_presence_absence.Rtab' 'mash_sketch.msh'
+      - name: Install PanGWASFlow
+        run: pip install -e .
+      - name: Reconstruct Mash distance matrix
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq mash
+          mash dist /tmp/pangwasflow-pneumo/mash_sketch.msh /tmp/pangwasflow-pneumo/mash_sketch.msh > /tmp/pangwasflow-pneumo/mash.long.tsv
+          python - <<'PY'
+          from pathlib import Path
+          import numpy as np
+          import pandas as pd
+
+          def sample_name(value: str) -> str:
+              name = Path(value).name
+              for suffix in (
+                  '.contigs_velvet.fasta',
+                  '.contigs_velvet.fa',
+                  '.contigs_velvet.fna',
+                  '.fasta',
+                  '.fa',
+                  '.fna',
+              ):
+                  if name.endswith(suffix):
+                      return name[:-len(suffix)]
+              return name
+
+          rows = []
+          samples = set()
+          with Path('/tmp/pangwasflow-pneumo/mash.long.tsv').open() as handle:
+              for line in handle:
+                  fields = line.rstrip('\n').split('\t')
+                  if len(fields) < 3:
+                      raise ValueError(f'Unexpected mash dist row: {line!r}')
+                  left = sample_name(fields[0])
+                  right = sample_name(fields[1])
+                  distance = float(fields[2])
+                  rows.append((left, right, distance))
+                  samples.update((left, right))
+          ordered = sorted(samples)
+          if len(ordered) != 616:
+              raise ValueError(f'Expected 616 Mash samples, observed {len(ordered)}')
+          lookup = {sample: index for index, sample in enumerate(ordered)}
+          values = np.zeros((len(ordered), len(ordered)), dtype=float)
+          for left, right, distance in rows:
+              values[lookup[left], lookup[right]] = distance
+          if not np.allclose(values, values.T, atol=1e-12, rtol=1e-9):
+              raise ValueError('Mash distance matrix is not symmetric')
+          pd.DataFrame(values, index=ordered, columns=ordered).to_csv('/tmp/pangwasflow-pneumo/mash.tsv', sep='\t')
+          PY
+      - name: Verify case-study input dimensions
+        run: |
+          python - <<'PY'
+          import csv
+          from pathlib import Path
+          import pandas as pd
+
+          root = Path('/tmp/pangwasflow-pneumo')
+          phenotype = next(root.rglob('resistances.pheno'))
+          rtab = next(root.rglob('gene_presence_absence.Rtab'))
+          with phenotype.open() as handle:
+              phenotype_rows = list(csv.reader(handle, delimiter='\t'))
+          with rtab.open() as handle:
+              reader = csv.reader(handle, delimiter='\t')
+              header = next(reader)
+              feature_count = sum(1 for _ in reader)
+          distance = pd.read_csv(root / 'mash.tsv', sep='\t', index_col=0)
+          assert phenotype_rows[0] == ['samples', 'penicillin'], phenotype_rows[0]
+          assert len(phenotype_rows) - 1 == 603, len(phenotype_rows) - 1
+          assert header[0] == 'Gene', header[0]
+          assert len(header) - 1 == 616, len(header) - 1
+          assert feature_count == 10944, feature_count
+          assert distance.shape == (616, 616), distance.shape
+          phenotype_ids = {row[0] for row in phenotype_rows[1:]}
+          assert not sorted(phenotype_ids - set(distance.index.astype(str)))
+          assert not sorted(phenotype_ids - set(header[1:]))
+          PY
+      - name: Prepare published accessory-gene matrix
+        run: |
+          pangwasflow prepare \
+            --features /tmp/pangwasflow-pneumo/gene_presence_absence.Rtab \
+            --metadata /tmp/pangwasflow-pneumo/resistances.pheno \
+            --format rtab \
+            --sample-id-column samples \
+            --label-column penicillin \
+            --min-prevalence 0.01 \
+            --max-prevalence 0.99 \
+            --min-samples 500 \
+            --outdir /tmp/pangwasflow-pneumo/prepared
+      - name: Run eight-MDS structure-adjusted accessory-gene GWAS
+        run: |
+          pangwasflow analyze \
+            --features /tmp/pangwasflow-pneumo/prepared/features_qc.tsv \
+            --metadata /tmp/pangwasflow-pneumo/prepared/metadata_qc.tsv \
+            --structure-distance /tmp/pangwasflow-pneumo/mash.tsv \
+            --pcs 8 \
+            --outdir /tmp/pangwasflow-pneumo/gwas
+          cat /tmp/pangwasflow-pneumo/gwas/gwas_summary.json
+      - name: Build audited case-study artifact
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import pandas as pd
+
+          root = Path('/tmp/pangwasflow-pneumo')
+          prep = json.loads((root / 'prepared/input_summary.json').read_text())
+          gwas = json.loads((root / 'gwas/gwas_summary.json').read_text())
+          naive = pd.read_csv(root / 'gwas/association_naive.tsv', sep='\t')
+          adjusted = pd.read_csv(root / 'gwas/association_adjusted.tsv', sep='\t')
+
+          assert prep['samples_retained'] == 603, prep
+          assert prep['samples_features'] == 616, prep
+          assert prep['features_input'] == 10944, prep
+          assert prep['features_retained'] == 6087, prep
+          assert gwas['samples'] == 603, gwas
+          assert gwas['features'] == 6087, gwas
+          assert gwas['structure_method'] == 'distance_mds', gwas
+          assert gwas['structure_components'] == 8, gwas
+          assert gwas['lambda_adjusted'] < gwas['lambda_naive'], gwas
+          assert (adjusted['pvalue'] > 0).all(), 'Adjusted LRT contains zero p-values'
+          assert adjusted['fit_success'].all(), 'One or more adjusted fits failed'
+
+          cpsg = adjusted.loc[adjusted['feature'] == 'cpsG'].iloc[0]
+          assert abs(float(cpsg['pvalue']) - 1.6948634682283326e-19) / 1.6948634682283326e-19 < 1e-5, cpsg.to_dict()
+
+          out = root / 'artifact'
+          out.mkdir(exist_ok=True)
+          (out / 'input_summary.json').write_text(json.dumps(prep, indent=2) + '\n')
+          (out / 'gwas_summary.json').write_text(json.dumps(gwas, indent=2) + '\n')
+          naive.to_csv(out / 'association_naive.tsv', sep='\t', index=False)
+          adjusted.to_csv(out / 'association_adjusted.tsv', sep='\t', index=False)
+          (root / 'gwas/structure_covariates.tsv').replace(out / 'structure_covariates.tsv')
+          (root / 'prepared/metadata_qc.tsv').replace(out / 'metadata_qc.tsv')
+          PY
+      - name: Render audited case-study figures
+        run: |
+          python case_studies/pneumococcus_penicillin/render_results.py \
+            --artifact /tmp/pangwasflow-pneumo/artifact \
+            --assets docs/assets \
+            --preview case_studies/pneumococcus_penicillin/results_preview
+      - name: Upload audited validation artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pneumococcus-penicillin-accessory-gwas
+          path: |
+            /tmp/pangwasflow-pneumo/artifact
+            docs/assets/pneumococcus_*.svg
+            case_studies/pneumococcus_penicillin/results_preview
+          if-no-files-found: error
+          retention-days: 14
+      - name: Commit audited figures and preview to PR branch
+        if: github.event_name == 'pull_request'
+        env:
+          HEAD_BRANCH: ${{ github.head_ref }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/assets/pneumococcus_*.svg case_studies/pneumococcus_penicillin/results_preview
+          if git diff --cached --quiet; then
+            echo 'Validated case-study assets are already current.'
+          else
+            git commit -m 'Regenerate pneumococcal GWAS case-study assets'
+            git push origin HEAD:${HEAD_BRANCH}
+          fi

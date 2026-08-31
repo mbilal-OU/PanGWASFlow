@@ -1,0 +1,11 @@
+{
+  "samples_metadata": 603,
+  "samples_features": 616,
+  "samples_retained": 603,
+  "features_input": 10944,
+  "features_retained": 6087,
+  "cases": 224,
+  "controls": 379,
+  "min_prevalence": 0.01,
+  "max_prevalence": 0.99
+}

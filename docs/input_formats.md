@@ -90,17 +90,26 @@ pangwasflow prepare \
 
 Preparation writes aligned metadata, the retained binary feature matrix, feature-level prevalence/missingness QC, sample-intersection details, and a machine-readable summary.
 
-## Association analysis
+## Population structure
+
+For compact examples, `pangwasflow analyze` estimates structure directly from the retained binary features using PCA. Real microbial GWAS often benefit from an independent genomic structure estimate so the tested feature matrix is not also the sole source of the correction covariates.
+
+PanGWASFlow therefore accepts a square sample-by-sample distance matrix through `--structure-distance`. The matrix must be numeric, symmetric, non-negative, have a zero diagonal, and contain matching row and column sample identifiers. PanGWASFlow subsets and reorders it to the prepared phenotype sample set, performs classical multidimensional scaling, and uses the requested number of MDS coordinates as fixed-effect covariates.
 
 ```bash
 pangwasflow analyze \
   --features results/prepared/features_qc.tsv \
   --metadata results/prepared/metadata_qc.tsv \
-  --pcs 2 \
+  --structure-distance mash.tsv \
+  --pcs 8 \
   --outdir results/gwas
 ```
 
-The current analysis writes PCA structure covariates, an unadjusted Fisher scan, a PCA-adjusted logistic scan, genomic-inflation diagnostics, and a JSON summary. Biological interpretation requires appropriate upstream feature construction, phenotype QC, and study-specific review.
+The resulting covariates are written to `structure_covariates.tsv`, and `gwas_summary.json` records whether the analysis used `feature_pca` or `distance_mds`.
+
+## Association analysis
+
+Without `--structure-distance`, the current analysis writes feature-derived PCA covariates, an unadjusted Fisher scan, a PCA-adjusted logistic scan, genomic-inflation diagnostics, and a JSON summary. With a distance matrix, the same adjusted model uses the MDS coordinates instead. Biological interpretation requires appropriate upstream feature construction, phenotype QC, study-specific structure assessment, and review of residual inflation.
 
 ## External format validation
 
