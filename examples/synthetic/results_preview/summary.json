@@ -10,10 +10,10 @@
     0.01778704437599128
   ],
   "lambda_naive": 2.0622034988774156,
-  "lambda_adjusted": 1.049565429747617,
+  "lambda_adjusted": 1.053236557482818,
   "significant_lineage_markers_naive": 35,
   "significant_lineage_markers_adjusted": 0,
   "causal_feature": "feature_000",
   "causal_qvalue_naive": 1.97495841691655e-06,
-  "causal_qvalue_adjusted": 8.802183345246051e-07
+  "causal_qvalue_adjusted": 2.0268877764922847e-07
 }
