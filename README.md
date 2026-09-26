@@ -115,13 +115,15 @@ flowchart LR
 
 ## Quick start
 
+PanGWASFlow requires Python 3.11 or 3.12. Install both the test and workflow extras so that the documented `snakemake` command is available in a fresh environment.
+
 ```bash
 git clone https://github.com/mbilal-OU/PanGWASFlow.git
 cd PanGWASFlow
 
 python -m venv .venv
 source .venv/bin/activate
-pip install -e '.[test]'
+pip install -e '.[test,workflow]'
 
 snakemake --cores 1
 ```
